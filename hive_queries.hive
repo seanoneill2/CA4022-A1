@@ -1,0 +1,119 @@
+-- File containing Hive code to complete my queries
+
+-- Delete existiting drinks tabele
+
+DROP TABLE drinks;
+
+-- Load in clean drinks data
+
+CREATE TABLE IF NOT EXISTS drinks (name STRING, calories INT, fat FLOAT, carbs INT, fiber INT, protein INT, sodium INT)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ","
+LINES TERMINATED BY "\n"
+STORED AS TEXTFILE;
+
+
+LOAD DATA LOCAL INPATH 'starbucks-clean-data/clean-drinks/part-m-00000'
+OVERWRITE INTO TABLE drinks;
+
+-- Find highest calorie count
+
+SELECT name, calories
+FROM drinks
+ORDER BY calories DESC, name
+LIMIT 5;
+
+-- For next query, want to find drink with most variations
+
+-- Delete extended drinks table
+
+DROP TABLE drinks_extended;
+
+-- Load in extended drinks data
+
+CREATE TABLE IF NOT EXISTS drinks_extended (beverage_category STRING, beverage STRING, beverage_prep STRING, calories INT, total_fat FLOAT, trans_fat FLOAT, saturated_fat FLOAT, sodium INT, carb INT, cholesterol INT, dietary_fibre INT, sugars INT, protein FLOAT, vitamin_a STRING, vitamin_c STRING, calcium STRING, iron STRING, caffeine INT)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ","
+LINES TERMINATED BY "\n"
+STORED AS TEXTFILE;
+
+LOAD DATA LOCAL INPATH 'starbucks-clean-data/clean-drinks-extended/part-m-00000'
+OVERWRITE INTO TABLE drinks_extended;
+
+
+-- Find drinks with most variations
+
+SELECT beverage, COUNT(beverage_prep) as variations from drinks_extended
+GROUP BY beverage
+ORDER BY variations DESC, beverage
+LIMIT 5;
+
+-- Find drinks with fewest variations
+
+SELECT beverage, COUNT(beverage_prep) as variations from drinks_extended
+GROUP BY beverage
+ORDER BY variations ASC, beverage
+LIMIT 5;
+
+
+-- Now for the complex queries
+
+-- Still need to load in food data, so delete if exists and load it in
+
+DROP TABLE food;
+
+CREATE TABLE IF NOT EXISTS food (name STRING, calories INT, fat FLOAT, carbs INT, fiber INT, protein INT)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ","
+LINES TERMINATED BY "\n"
+STORED AS TEXTFILE;
+
+LOAD DATA LOCAL INPATH 'starbucks-clean-data/clean-food/part-m-00000'
+OVERWRITE INTO TABLE food;
+
+-- Find food items with lowest calorie count and above avergae protein content
+
+SELECT name, protein, fat
+FROM food
+WHERE protein > (SELECT AVG(protein) FROM food)
+ORDER BY fat
+LIMIT 5;
+
+-- Next query I want to find food or drink with highest combined fat, carbs, fibre and protein
+
+-- Combine the two tables, adding 0's to the foods sodium count and a 'type' column
+
+DROP TABLE combined_data;
+
+CREATE TABLE combined_data AS
+SELECT name, calories, fat, carbs, fiber, protein, 0 as sodium, 'food' as type
+FROM food
+UNION ALL
+SELECT name, calories, fat, carbs, fiber, protein, sodium, 'drink' as type
+FROM drinks;
+
+-- Complete query
+
+SELECT name, type, (CAST(fat AS FLOAT) + CAST(carbs AS FLOAT) + CAST(fiber AS FLOAT) + CAST(protein AS FLOAT)) AS combined_value
+FROM combined_data
+ORDER BY combined_value DESC
+LIMIT 5;
+
+-- Save this table for visualisations
+
+INSERT OVERWRITE LOCAL DIRECTORY 'starbucks-clean-data/combined_data'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+SELECT * FROM combinec_data;
+
+-- For final query, using extended drinks table to take random sample of 40 and seeing how many have 'Nonfat milk' option, return beverage name, beverage type and fat count
+
+SELECT beverage, beverage_prep, total_fat
+FROM (
+    SELECT beverage, beverage_prep, total_fat
+    FROM drinks_extended
+    TABLESAMPLE(BUCKET 1 OUT OF 40 ON RAND())
+) sampled_data
+WHERE sampled_data.beverage_prep LIKE '%Nonfat%';
+
+-- This completes all my hive queries
